@@ -1,23 +1,43 @@
 <template>
-  <div class="video-player">
-    <div class="video-container">
-      <video
-        ref="videoElement"
-        class="video"
-        :src="currentVideo"
-        @play="onVideoPlay"
-        @pause="onVideoPause"
-        @timeupdate="onTimeUpdate"
-        @loadedmetadata="onLoadedMetadata"
-      ></video>
-      
-      <div class="video-controls">
-        <button @click="togglePlayPause" class="control-btn">
-          {{ isPlaying ? '⏸ Pause' : '▶ Play' }}
-        </button>
-        <div class="time-display">
-          {{ formatTime(currentTime) }} / {{ formatTime(duration) }}
+  <div class="video-player-container">
+    <!-- Main Video Section -->
+    <div class="video-main-area">
+      <div class="video-wrapper">
+        <video
+          ref="videoElement"
+          class="video-element"
+          :src="currentVideoPath"
+          @play="onVideoPlay"
+          @pause="onVideoPause"
+          @timeupdate="onTimeUpdate"
+          @loadedmetadata="onLoadedMetadata"
+          @ended="onVideoEnded"
+        ></video>
+        
+        <div class="video-overlay" v-if="!isPlaying">
+          <button @click="togglePlayPause" class="play-button">
+            <span class="play-icon">▶</span>
+          </button>
         </div>
+      </div>
+
+      <!-- Video Controls -->
+      <div class="video-controls-bar">
+        <div class="controls-left">
+          <button @click="togglePlayPause" class="control-button">
+            <span v-if="isPlaying">⏸</span>
+            <span v-else>▶</span>
+          </button>
+          <button @click="stopVideo" class="control-button" title="Stop">
+            ⏹
+          </button>
+          <div class="time-display">
+            <span>{{ formatTime(currentTime) }}</span>
+            <span class="time-separator">/</span>
+            <span>{{ formatTime(duration) }}</span>
+          </div>
+        </div>
+        
         <input
           type="range"
           :value="currentTime"
@@ -25,332 +45,456 @@
           @input="seekVideo"
           class="progress-bar"
         />
+        
+        <div class="controls-right">
+          <button @click="toggleMute" class="control-button" title="Mute">
+            <span v-if="isMuted">🔇</span>
+            <span v-else>🔊</span>
+          </button>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            :value="volume"
+            @input="setVolume"
+            class="volume-slider"
+          />
+          <button @click="toggleFullscreen" class="control-button" title="Fullscreen">
+            ⛶
+          </button>
+        </div>
+      </div>
+
+      <!-- Video Info -->
+      <div class="video-info-bar">
+        <div class="info-item">
+          <span class="info-label">Status:</span>
+          <span class="info-value">{{ isPlaying ? 'Playing' : 'Paused' }}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Video:</span>
+          <span class="info-value truncate">{{ currentVideoName }}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Connected Devices:</span>
+          <span class="info-value">{{ connectedDevices.length }}</span>
+        </div>
       </div>
     </div>
 
+    <!-- Right Sidebar -->
     <div class="sidebar">
-      <div class="connection-status">
-        <span class="status-dot" :class="{ connected: isConnected }"></span>
-        {{ isConnected ? 'Connected to AffenApp' : 'Waiting for connection...' }}
-      </div>
-
-      <div class="video-list">
-        <h3>Video Library</h3>
-        <div class="local-videos">
-          <button
-            v-for="video in availableVideos"
-            :key="video.id"
-            @click="selectVideo(video)"
-            class="video-item"
-            :class="{ active: currentVideo === video.path }"
-          >
-            {{ video.name }}
-          </button>
+      <!-- Connection Status -->
+      <div class="panel connection-panel">
+        <div class="panel-header">
+          <h3>Connection Status</h3>
+          <span class="status-indicator" :class="{ connected: isConnected, disconnected: !isConnected }"></span>
         </div>
-
-        <div class="upload-section">
-          <h4>Upload Video</h4>
-          <input
-            type="file"
-            accept="video/*"
-            @change="handleVideoUpload"
-            class="file-input"
-          />
+        <div class="panel-content">
+          <p class="status-text">{{ isConnected ? '✓ Connected to AffenApp' : '✗ Waiting for connection' }}</p>
+          <div class="devices-list">
+            <p v-if="connectedDevices.length === 0" class="empty-text">No devices connected</p>
+            <div v-for="device in connectedDevices" :key="device.id" class="device-item">
+              <span class="device-name">{{ device.name }}</span>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div class="status-info">
-        <h4>Video Info</h4>
-        <p>Status: {{ isPlaying ? 'Playing' : 'Paused' }}</p>
-        <p>Resolution: {{ videoResolution }}</p>
-        <p>Connected Devices: {{ connectedDevices.length }}</p>
+      <!-- Video Library -->
+      <div class="panel videos-panel">
+        <div class="panel-header">
+          <h3>Video Library</h3>
+        </div>
+        <div class="panel-content">
+          <div v-if="availableVideos.length === 0" class="empty-text">
+            No videos available
+          </div>
+          <div v-else class="videos-list">
+            <button
+              v-for="video in availableVideos"
+              :key="video.id"
+              @click="selectVideo(video)"
+              class="video-item"
+              :class="{ active: currentVideoId === video.id }"
+              :title="video.name"
+            >
+              <span class="video-item-name">{{ video.name }}</span>
+              <span class="video-item-size">{{ formatFileSize(video.size) }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Upload Section -->
+      <div class="panel upload-panel">
+        <div class="panel-header">
+          <h3>Upload Video</h3>
+        </div>
+        <div class="panel-content">
+          <label class="file-upload-label">
+            <input
+              type="file"
+              accept="video/*"
+              @change="handleVideoUpload"
+              class="file-input-hidden"
+            />
+            <span class="file-upload-button">Choose Video</span>
+          </label>
+          <p v-if="uploadProgress > 0 && uploadProgress < 100" class="upload-progress">
+            Uploading: {{ uploadProgress }}%
+          </p>
+        </div>
+      </div>
+
+      <!-- Observation Notes -->
+      <div class="panel notes-panel">
+        <div class="panel-header">
+          <h3>Observation Notes</h3>
+        </div>
+        <div class="panel-content">
+          <textarea
+            v-model="newNote"
+            placeholder="Add observation notes..."
+            class="note-input"
+            @keyup.ctrl.enter="addNote"
+          ></textarea>
+          <button @click="addNote" class="add-note-button">Add Note</button>
+          <div v-if="notes.length > 0" class="notes-list">
+            <div v-for="(note, idx) in notes" :key="idx" class="note-item">
+              <span class="note-time">{{ note.time }}</span>
+              <span class="note-text">{{ note.text }}</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
-<script>
+<script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useStore } from 'vuex'
-import WebSocketManager from '../services/websocket.js'
 
-export default {
-  name: 'VideoPlayer',
-  setup() {
-    const store = useStore()
-    const videoElement = ref(null)
-    const isPlaying = ref(false)
-    const currentTime = ref(0)
-    const duration = ref(0)
-    const videoResolution = ref('1080p')
-    const isConnected = ref(false)
-    const connectedDevices = ref([])
-    const availableVideos = ref([
-      { id: 1, name: 'Sample Video 1', path: 'videos/sample1.mp4' },
-      { id: 2, name: 'Sample Video 2', path: 'videos/sample2.mp4' }
-    ])
-    const currentVideo = ref(availableVideos.value[0].path)
-    const wsManager = ref(null)
+const store = useStore()
+const videoElement = ref(null)
+const isPlaying = ref(false)
+const isMuted = ref(false)
+const currentTime = ref(0)
+const duration = ref(0)
+const volume = ref(100)
+const uploadProgress = ref(0)
+const newNote = ref('')
+const notes = ref([])
 
-    const formatTime = (seconds) => {
-      if (!seconds || isNaN(seconds)) return '0:00'
-      const hours = Math.floor(seconds / 3600)
-      const minutes = Math.floor((seconds % 3600) / 60)
-      const secs = Math.floor(seconds % 60)
-      
-      if (hours > 0) {
-        return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
-      }
-      return `${minutes}:${String(secs).padStart(2, '0')}`
-    }
+const currentVideoId = ref(1)
+const availableVideos = ref([
+  { id: 1, name: 'Sample Video 1.mp4', path: 'videos/sample1.mp4', size: 5242880 },
+  { id: 2, name: 'Sample Video 2.mp4', path: 'videos/sample2.mp4', size: 3145728 }
+])
 
-    const togglePlayPause = () => {
-      if (videoElement.value) {
-        if (isPlaying.value) {
-          videoElement.value.pause()
-        } else {
-          videoElement.value.play()
-        }
-      }
-    }
+const currentVideoPath = computed(() => {
+  const video = availableVideos.value.find(v => v.id === currentVideoId.value)
+  return video ? video.path : ''
+})
 
-    const seekVideo = (event) => {
-      if (videoElement.value) {
-        videoElement.value.currentTime = event.target.value
-      }
-    }
+const currentVideoName = computed(() => {
+  const video = availableVideos.value.find(v => v.id === currentVideoId.value)
+  return video ? video.name : 'No video selected'
+})
 
-    const onVideoPlay = () => {
-      isPlaying.value = true
-      if (wsManager.value) {
-        wsManager.value.sendMessage({
-          type: 'video_state',
-          action: 'play',
-          timestamp: currentTime.value,
-          video: currentVideo.value
-        })
-      }
-    }
+const isConnected = computed(() => store.state.wsConnected)
+const connectedDevices = computed(() => store.state.connectedDevices)
 
-    const onVideoPause = () => {
-      isPlaying.value = false
-      if (wsManager.value) {
-        wsManager.value.sendMessage({
-          type: 'video_state',
-          action: 'pause',
-          timestamp: currentTime.value,
-          video: currentVideo.value
-        })
-      }
-    }
+const formatTime = (seconds) => {
+  if (!seconds || isNaN(seconds)) return '0:00'
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const secs = Math.floor(seconds % 60)
+  
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+  }
+  return `${minutes}:${String(secs).padStart(2, '0')}`
+}
 
-    const onTimeUpdate = () => {
-      if (videoElement.value) {
-        currentTime.value = videoElement.value.currentTime
-      }
-    }
+const formatFileSize = (bytes) => {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
+}
 
-    const onLoadedMetadata = () => {
-      if (videoElement.value) {
-        duration.value = videoElement.value.duration
-      }
-    }
-
-    const selectVideo = (video) => {
-      currentVideo.value = video.path
-      if (videoElement.value) {
-        videoElement.value.src = video.path
-        videoElement.value.load()
-      }
-      if (wsManager.value) {
-        wsManager.value.sendMessage({
-          type: 'video_selected',
-          video: video,
-          timestamp: new Date().toISOString()
-        })
-      }
-    }
-
-    const handleVideoUpload = (event) => {
-      const file = event.target.files[0]
-      if (file) {
-        const reader = new FileReader()
-        reader.onload = (e) => {
-          const videoName = file.name
-          // Store in localStorage for now (in production, use proper storage)
-          localStorage.setItem(`video_${videoName}`, e.target.result)
-          
-          const newVideo = {
-            id: availableVideos.value.length + 1,
-            name: videoName,
-            path: `local:${videoName}`
-          }
-          availableVideos.value.push(newVideo)
-          
-          if (wsManager.value) {
-            wsManager.value.sendMessage({
-              type: 'video_uploaded',
-              video: newVideo,
-              timestamp: new Date().toISOString()
-            })
-          }
-        }
-        reader.readAsArrayBuffer(file)
-      }
-    }
-
-    const handleWebSocketMessage = (message) => {
-      console.log('WebSocket message received:', message)
-      
-      switch (message.type) {
-        case 'play':
-          if (videoElement.value && videoElement.value.paused) {
-            videoElement.value.play()
-          }
-          break
-        case 'pause':
-          if (videoElement.value && !videoElement.value.paused) {
-            videoElement.value.pause()
-          }
-          break
-        case 'seek':
-          if (videoElement.value) {
-            videoElement.value.currentTime = message.timestamp
-          }
-          break
-        case 'load_video':
-          selectVideo(message.video)
-          break
-        case 'device_connected':
-          connectedDevices.value.push(message.device)
-          break
-        case 'device_disconnected':
-          connectedDevices.value = connectedDevices.value.filter(
-            d => d.id !== message.device.id
-          )
-          break
-      }
-    }
-
-    onMounted(() => {
-      // Initialize WebSocket connection
-      wsManager.value = new WebSocketManager(
-        'ws://localhost:8080',
-        handleWebSocketMessage
-      )
-      wsManager.value.connect().then(() => {
-        isConnected.value = true
-        wsManager.value.sendMessage({
-          type: 'device_register',
-          device: {
-            type: 'video_player',
-            name: 'AffenVideo Player',
-            timestamp: new Date().toISOString()
-          }
-        })
-      })
-
-      // Try to detect network IP and establish connection
-      detectNetworkAndConnect()
-    })
-
-    const detectNetworkAndConnect = () => {
-      // Attempt to detect local network IP
-      const ips = ['192.168.1.1', '192.168.0.1', '10.0.0.1', 'localhost']
-      ips.forEach((ip, index) => {
-        setTimeout(() => {
-          const wsUrl = `ws://${ip}:8080`
-          if (wsManager.value && !isConnected.value) {
-            wsManager.value.connect(wsUrl).catch(() => {
-              console.log(`Failed to connect to ${wsUrl}`)
-            })
-          }
-        }, index * 500)
-      })
-    }
-
-    onUnmounted(() => {
-      if (wsManager.value) {
-        wsManager.value.disconnect()
-      }
-    })
-
-    return {
-      videoElement,
-      isPlaying,
-      currentTime,
-      duration,
-      videoResolution,
-      isConnected,
-      connectedDevices,
-      availableVideos,
-      currentVideo,
-      formatTime,
-      togglePlayPause,
-      seekVideo,
-      selectVideo,
-      handleVideoUpload,
-      onVideoPlay,
-      onVideoPause,
-      onTimeUpdate,
-      onLoadedMetadata
+const togglePlayPause = () => {
+  if (videoElement.value) {
+    if (isPlaying.value) {
+      videoElement.value.pause()
+    } else {
+      videoElement.value.play()
     }
   }
 }
+
+const stopVideo = () => {
+  if (videoElement.value) {
+    videoElement.value.pause()
+    videoElement.value.currentTime = 0
+    isPlaying.value = false
+  }
+}
+
+const seekVideo = (event) => {
+  if (videoElement.value) {
+    videoElement.value.currentTime = parseFloat(event.target.value)
+  }
+}
+
+const toggleMute = () => {
+  if (videoElement.value) {
+    videoElement.value.muted = !videoElement.value.muted
+    isMuted.value = videoElement.value.muted
+  }
+}
+
+const setVolume = (event) => {
+  const vol = parseFloat(event.target.value)
+  volume.value = vol
+  if (videoElement.value) {
+    videoElement.value.volume = vol / 100
+  }
+}
+
+const toggleFullscreen = () => {
+  if (videoElement.value?.requestFullscreen) {
+    videoElement.value.requestFullscreen()
+  }
+}
+
+const onVideoPlay = () => {
+  isPlaying.value = true
+  const wsManager = store.state.wsManager
+  if (wsManager?.isConnected) {
+    wsManager.sendMessage({
+      type: 'video_state',
+      action: 'play',
+      video: currentVideoName.value,
+      timestamp: currentTime.value,
+      time: new Date().toISOString()
+    })
+  }
+}
+
+const onVideoPause = () => {
+  isPlaying.value = false
+  const wsManager = store.state.wsManager
+  if (wsManager?.isConnected) {
+    wsManager.sendMessage({
+      type: 'video_state',
+      action: 'pause',
+      video: currentVideoName.value,
+      timestamp: currentTime.value,
+      time: new Date().toISOString()
+    })
+  }
+}
+
+const onTimeUpdate = () => {
+  if (videoElement.value) {
+    currentTime.value = videoElement.value.currentTime
+  }
+}
+
+const onLoadedMetadata = () => {
+  if (videoElement.value) {
+    duration.value = videoElement.value.duration
+  }
+}
+
+const onVideoEnded = () => {
+  isPlaying.value = false
+}
+
+const selectVideo = (video) => {
+  currentVideoId.value = video.id
+  if (videoElement.value) {
+    videoElement.value.src = video.path
+    videoElement.value.load()
+  }
+  const wsManager = store.state.wsManager
+  if (wsManager?.isConnected) {
+    wsManager.sendMessage({
+      type: 'video_selected',
+      video: video.name,
+      timestamp: new Date().toISOString()
+    })
+  }
+}
+
+const handleVideoUpload = (event) => {
+  const file = event.target.files?.[0]
+  if (file) {
+    // Simulate upload progress
+    let progress = 0
+    const interval = setInterval(() => {
+      progress += Math.random() * 30
+      uploadProgress.value = Math.min(progress, 90)
+      if (progress >= 90) {
+        clearInterval(interval)
+        uploadProgress.value = 100
+        
+        // Add to video list after upload
+        const newVideo = {
+          id: Math.max(...availableVideos.value.map(v => v.id), 0) + 1,
+          name: file.name,
+          path: `videos/${file.name}`,
+          size: file.size
+        }
+        availableVideos.value.push(newVideo)
+        
+        setTimeout(() => {
+          uploadProgress.value = 0
+        }, 1000)
+        
+        const wsManager = store.state.wsManager
+        if (wsManager?.isConnected) {
+          wsManager.sendMessage({
+            type: 'video_uploaded',
+            video: newVideo.name,
+            timestamp: new Date().toISOString()
+          })
+        }
+      }
+    }, 200)
+  }
+}
+
+const addNote = () => {
+  if (newNote.value.trim()) {
+    notes.value.push({
+      time: formatTime(currentTime.value),
+      text: newNote.value.trim()
+    })
+    newNote.value = ''
+  }
+}
+
+onMounted(() => {
+  const wsManager = store.state.wsManager
+  if (wsManager) {
+    wsManager.connect().catch(() => {
+      console.log('Will retry connection')
+    })
+  }
+})
+
+onUnmounted(() => {
+  // Cleanup
+})
 </script>
 
 <style scoped>
-.video-player {
+.video-player-container {
   display: flex;
   height: 100vh;
-  background-color: #1a1a1a;
-  color: #fff;
+  background-color: #111827;
+  color: #e5e7eb;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  gap: 1rem;
+  padding: 1rem;
 }
 
-.video-container {
+.video-main-area {
   flex: 1;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  align-items: center;
+  gap: 0.5rem;
+}
+
+.video-wrapper {
+  flex: 1;
+  position: relative;
   background-color: #000;
-  padding: 20px;
-}
-
-.video {
-  max-width: 100%;
-  max-height: 85vh;
-  border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.8);
-}
-
-.video-controls {
+  border-radius: 0.5rem;
+  overflow: hidden;
   display: flex;
   align-items: center;
-  gap: 15px;
-  margin-top: 20px;
+  justify-content: center;
+  min-height: 400px;
+}
+
+.video-element {
   width: 100%;
-  max-width: 800px;
-  background-color: rgba(255, 255, 255, 0.1);
-  padding: 15px;
-  border-radius: 8px;
+  height: 100%;
+  object-fit: contain;
 }
 
-.control-btn {
-  padding: 10px 20px;
-  background-color: #4CAF50;
-  color: white;
+.video-overlay {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.play-button {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background-color: rgba(76, 175, 80, 0.8);
   border: none;
-  border-radius: 4px;
+  color: white;
+  font-size: 40px;
   cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  transition: background-color 0.3s;
+  transition: all 0.3s;
 }
 
-.control-btn:hover {
-  background-color: #45a049;
+.play-button:hover {
+  background-color: rgba(76, 175, 80, 1);
+  transform: scale(1.1);
+}
+
+.video-controls-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background-color: #1f2937;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+}
+
+.controls-left,
+.controls-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.control-button {
+  background: none;
+  border: none;
+  color: #e5e7eb;
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0.25rem;
+  transition: color 0.2s;
+}
+
+.control-button:hover {
+  color: #4caf50;
+}
+
+.time-display {
+  font-size: 0.875rem;
+  color: #9ca3af;
+  white-space: nowrap;
+  min-width: 100px;
+}
+
+.time-separator {
+  margin: 0 0.25rem;
 }
 
 .progress-bar {
@@ -369,7 +513,7 @@ export default {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background-color: #4CAF50;
+  background-color: #4caf50;
   cursor: pointer;
 }
 
@@ -377,147 +521,326 @@ export default {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background-color: #4CAF50;
+  background-color: #4caf50;
   cursor: pointer;
   border: none;
 }
 
-.time-display {
-  font-size: 12px;
-  color: #aaa;
-  white-space: nowrap;
+.volume-slider {
+  width: 80px;
+  height: 4px;
+  cursor: pointer;
+  border-radius: 2px;
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: #4caf50;
+  cursor: pointer;
+}
+
+.volume-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: #4caf50;
+  cursor: pointer;
+  border: none;
+}
+
+.video-info-bar {
+  display: flex;
+  gap: 2rem;
+  background-color: #1f2937;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.info-item {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.info-label {
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.info-value {
+  color: #4caf50;
+  font-weight: 600;
 }
 
 .sidebar {
-  width: 300px;
-  background-color: #2a2a2a;
-  padding: 20px;
+  width: 320px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  border-left: 1px solid #444;
+  gap: 1rem;
   overflow-y: auto;
 }
 
-.connection-status {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px;
-  background-color: rgba(76, 175, 80, 0.1);
-  border-radius: 4px;
-  font-size: 14px;
-  border: 1px solid rgba(76, 175, 80, 0.3);
+.panel {
+  background-color: #1f2937;
+  border-radius: 0.5rem;
+  overflow: hidden;
 }
 
-.status-dot {
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #111827;
+  padding: 1rem;
+  border-bottom: 1px solid #374151;
+}
+
+.panel-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #f3f4f6;
+}
+
+.panel-content {
+  padding: 1rem;
+}
+
+.status-indicator {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background-color: #999;
+  background-color: #6b7280;
   display: inline-block;
   transition: background-color 0.3s;
 }
 
-.status-dot.connected {
-  background-color: #4CAF50;
-  box-shadow: 0 0 8px #4CAF50;
+.status-indicator.connected {
+  background-color: #4caf50;
+  box-shadow: 0 0 8px #4caf50;
 }
 
-.video-list h3 {
-  margin-top: 0;
-  font-size: 16px;
-  color: #fff;
+.status-indicator.disconnected {
+  background-color: #ef4444;
 }
 
-.local-videos {
+.status-text {
+  margin: 0 0 1rem 0;
+  font-size: 0.875rem;
+  color: #d1d5db;
+}
+
+.devices-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0.5rem;
+}
+
+.device-item {
+  padding: 0.5rem;
+  background-color: rgba(76, 175, 80, 0.1);
+  border-left: 3px solid #4caf50;
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+}
+
+.device-name {
+  color: #a3e635;
+}
+
+.empty-text {
+  color: #6b7280;
+  font-size: 0.875rem;
+  text-align: center;
+  padding: 1rem 0;
+  margin: 0;
+}
+
+.videos-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 300px;
+  overflow-y: auto;
 }
 
 .video-item {
-  padding: 10px;
-  background-color: #3a3a3a;
-  border: 1px solid #444;
-  color: #ccc;
-  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  background-color: #374151;
+  border: 1px solid #4b5563;
+  border-radius: 0.375rem;
+  color: #d1d5db;
   cursor: pointer;
   text-align: left;
-  font-size: 13px;
+  font-size: 0.875rem;
   transition: all 0.2s;
 }
 
 .video-item:hover {
-  background-color: #404040;
-  border-color: #555;
+  background-color: #4b5563;
+  border-color: #4caf50;
 }
 
 .video-item.active {
-  background-color: #4CAF50;
+  background-color: #4caf50;
   color: white;
-  border-color: #4CAF50;
+  border-color: #4caf50;
+  font-weight: 600;
 }
 
-.upload-section {
-  margin-top: 15px;
-  padding-top: 15px;
-  border-top: 1px solid #444;
+.video-item-name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.upload-section h4 {
-  margin: 0 0 10px 0;
-  font-size: 13px;
-  color: #aaa;
+.video-item-size {
+  color: #9ca3af;
+  font-size: 0.75rem;
 }
 
-.file-input {
+.file-upload-label {
   display: block;
-  width: 100%;
-  padding: 8px;
-  background-color: #3a3a3a;
-  border: 1px dashed #555;
-  border-radius: 4px;
-  color: #aaa;
+}
+
+.file-input-hidden {
+  display: none;
+}
+
+.file-upload-button {
+  display: block;
+  padding: 0.75rem;
+  background-color: #4caf50;
+  color: white;
+  text-align: center;
+  border-radius: 0.375rem;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: background-color 0.2s;
 }
 
-.file-input:hover {
-  border-color: #4CAF50;
+.file-upload-button:hover {
+  background-color: #45a049;
 }
 
-.status-info {
-  padding-top: 15px;
-  border-top: 1px solid #444;
+.upload-progress {
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: #9ca3af;
+  text-align: center;
 }
 
-.status-info h4 {
-  margin: 0 0 10px 0;
-  font-size: 13px;
-  color: #aaa;
+.note-input {
+  width: 100%;
+  height: 80px;
+  padding: 0.5rem;
+  background-color: #374151;
+  color: #e5e7eb;
+  border: 1px solid #4b5563;
+  border-radius: 0.375rem;
+  font-family: inherit;
+  font-size: 0.875rem;
+  resize: none;
+  margin-bottom: 0.5rem;
 }
 
-.status-info p {
-  margin: 5px 0;
-  font-size: 12px;
-  color: #999;
+.note-input:focus {
+  outline: none;
+  border-color: #4caf50;
+  background-color: #4b5563;
 }
 
-@media (max-width: 1024px) {
-  .video-player {
+.add-note-button {
+  width: 100%;
+  padding: 0.5rem;
+  background-color: #4caf50;
+  color: white;
+  border: none;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.add-note-button:hover {
+  background-color: #45a049;
+}
+
+.notes-list {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.note-item {
+  padding: 0.5rem;
+  background-color: #374151;
+  border-left: 3px solid #4caf50;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+}
+
+.note-time {
+  color: #9ca3af;
+  font-weight: 500;
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.note-text {
+  color: #d1d5db;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+@media (max-width: 1280px) {
+  .video-player-container {
     flex-direction: column;
   }
-
+  
   .sidebar {
     width: 100%;
-    border-left: none;
-    border-top: 1px solid #444;
-    padding: 15px;
+    max-height: 300px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1rem;
   }
+}
 
-  .video {
-    max-height: 60vh;
+@media (max-width: 768px) {
+  .video-player-container {
+    padding: 0.5rem;
+    gap: 0.5rem;
+  }
+  
+  .video-controls-bar {
+    flex-wrap: wrap;
+  }
+  
+  .progress-bar {
+    order: 3;
+    flex-basis: 100%;
+    margin: 0.5rem 0;
+  }
+  
+  .sidebar {
+    display: none;
   }
 }
 </style>

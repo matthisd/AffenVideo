@@ -9,7 +9,9 @@ const store = createStore({
       duration: 0,
       videos: [],
       connectedDevices: [],
-      wsConnected: false
+      wsConnected: false,
+      wsManager: null,
+      notes: []
     }
   },
   mutations: {
@@ -35,13 +37,21 @@ const store = createStore({
       state.connectedDevices = devices
     },
     addDevice(state, device) {
-      state.connectedDevices.push(device)
+      if (!state.connectedDevices.find(d => d.id === device.id)) {
+        state.connectedDevices.push(device)
+      }
     },
     removeDevice(state, deviceId) {
       state.connectedDevices = state.connectedDevices.filter(d => d.id !== deviceId)
     },
     setWSConnected(state, connected) {
       state.wsConnected = connected
+    },
+    setWebSocketManager(state, manager) {
+      state.wsManager = manager
+    },
+    addNote(state, note) {
+      state.notes.push(note)
     }
   },
   actions: {
@@ -68,6 +78,21 @@ const store = createStore({
     },
     setConnectionStatus({ commit }, status) {
       commit('setWSConnected', status)
+    },
+    handleWebSocketMessage({ commit, dispatch }, message) {
+      console.log('WebSocket message:', message)
+      
+      switch (message.type) {
+        case 'device_connected':
+          commit('addDevice', message.device)
+          break
+        case 'device_disconnected':
+          commit('removeDevice', message.device.id)
+          break
+        case 'connection_status':
+          commit('setWSConnected', message.connected)
+          break
+      }
     }
   },
   getters: {
@@ -77,7 +102,8 @@ const store = createStore({
     duration: state => state.duration,
     videos: state => state.videos,
     connectedDevices: state => state.connectedDevices,
-    isWSConnected: state => state.wsConnected
+    isWSConnected: state => state.wsConnected,
+    notes: state => state.notes
   }
 })
 
